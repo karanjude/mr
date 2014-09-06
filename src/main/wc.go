@@ -5,14 +5,57 @@ import "fmt"
 import "mapreduce"
 import "container/list"
 
+import "strings"
+import "unicode"
+import "strconv"
+
 // our simplified version of MapReduce does not supply a
 // key to the Map function, as in the paper; only a value,
 // which is a part of the input file contents
 func Map(value string) *list.List {
+     //fmt.Printf("Data: %s", value) 
+
+     f := func(c rune) bool {
+       return !unicode.IsLetter(c) && !unicode.IsNumber(c)
+     }     
+
+     //fmt.Printf("%q", strings.FieldsFunc(value, f))
+     parts := strings.FieldsFunc(value, f)
+     
+     var cnt = len(parts)
+     //fmt.Printf("!!!!Part Count: %d", cnt)
+
+     var result list.List
+
+     for i := 0; i < cnt; i++ {
+     	 //fmt.Printf("%s", parts[i])	
+
+	 var v mapreduce.KeyValue
+	 v.Key = parts[i]
+	 v.Value = "1"
+	 
+	 //fmt.Printf(" KeyValue(%s,%s) ", v.Key, v.Value)
+
+     	 result.PushBack(v)
+     }
+
+     return &result    
 }
 
 // iterate over list and add values
 func Reduce(key string, values *list.List) string {
+     cnt := 0
+
+     for e:= values.Front(); e != nil; e = e.Next() {
+         vv, _ := e.Value.(string)
+	 v, _ := strconv.Atoi(vv)
+	 cnt = cnt + v
+     }
+     
+     var result string
+     result = strconv.Itoa(cnt)
+     //fmt.Printf("%s:%s", key, result)
+     return result
 }
 
 // Can be run in 3 ways:

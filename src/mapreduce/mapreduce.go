@@ -220,6 +220,7 @@ func DoMap(JobNumber int, fileName string,
     enc := json.NewEncoder(file)
     for e := res.Front(); e != nil; e = e.Next() {
       kv := e.Value.(KeyValue)
+      //fmt.Printf("KeyValue(%s,%s)", kv.Key, kv.Value)
       if hash(kv.Key) % uint32(nreduce) == uint32(r) {
         err := enc.Encode(&kv);
         if err != nil {
