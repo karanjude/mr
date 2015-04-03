@@ -20,7 +20,7 @@ func (mr *MapReduce) KillWorkers() *list.List {
 		var reply ShutdownReply
 		ok := call(w.address, "Worker.Shutdown", args, &reply)
 		if ok == false {
-			fmt.Printf("DoWork: RPC %s shutdown error\n", w.address)
+			fmt.Printf("DoWork: RPC shutdown error\n")
 		} else {
 			l.PushBack(reply.Njobs)
 		}
@@ -37,18 +37,22 @@ func (mr *MapReduce) RunMapper(map_count int, w *WorkerInfo){
 
 			var res DoJobReply
 			retries := 0
-			for retries < 3 {
+			for retries < 1 {
 				ok := call(w.address, "Worker.DoJob", args, &res)
 				if ok == false{
-					fmt.Printf("DoJob: Map Failed for worker %s %v \n", w.address)
+				      	 //fmt.Printf("Total workers: %d", len(mr.Workers))
+				      	 fmt.Printf("map job failed for %d \n", map_count)
+					//fmt.Printf("DoJob: Map Failed for worker %s %v \n", w.address)
+					mr.MapWorkQueue <- map_count
 				}else{
 					//fmt.Printf("DoJob: Map Succeeded for worker %s \n", w.address)
+					mr.MapChannel <- map_count		
 					break
 				}
 				retries += 1
-				fmt.Printf("Retryin ... %d\n", retries)
+				//fmt.Printf("Retryin ... %d\n", retries)
 			}
-	mr.MapChannel <- true
+
 }
 
 func (mr *MapReduce) RunReducer(reduce_count int, w *WorkerInfo){
@@ -60,56 +64,116 @@ func (mr *MapReduce) RunReducer(reduce_count int, w *WorkerInfo){
 
 			var res DoJobReply
 			retries := 0
-			for retries < 3 {
+			for retries < 1 {
 				ok := call(w.address, "Worker.DoJob", args, &res)
 				if ok == false {
-					fmt.Printf("DoJob: Reduce Failed for worker %s \n", w.address)
+				      	 //fmt.Printf("Total workers: %d", len(mr.Workers))
+				      	 fmt.Printf("reduce job failed for %d \n", reduce_count)
+					//fmt.Printf("DoJob: Map Failed for worker %s %v \n", w.address)
+					mr.ReduceWorkQueue <- reduce_count
 				}else{
 					//fmt.Printf("DoJob: Reduce succeeded for worker %s \n", w.address)
+					mr.ReduceChannel <- reduce_count		
 					break
 				}
 				retries += 1
-				fmt.Printf("Retryin ... %d\n", retries)
+				//fmt.Printf("Retryin ... %d\n", retries)
 			}
-	mr.ReduceChannel <- true
 }
+
+func (mr *MapReduce) WorkerCoordinator(){
+     for {
+     	 select {
+	  case worker := <-mr.registerChannel:
+	  	    fmt.Printf("Added worker: %s \n", worker)
+	  default:
+	 }
+    }
+}
+
+func (mr *MapReduce) MapJobDispatcher(){
+     for {
+     	for job := range mr.MapWorkQueue {
+
+	    worker_index := 1
+	    total_workers := len(mr.Workers)
+	
+            for _, w := range mr.Workers {	
+	      	       fmt.Printf("Submitting Map job: %d to worker:%s \n", job, w)	
+	      	       go mr.RunMapper(job, w)
+		       if(worker_index < total_workers){
+		       		       job = <- mr.MapWorkQueue	
+				       worker_index += 1
+		       }
+		}
+	 }
+    }
+}
+
+func (mr *MapReduce) ReduceJobDispatcher(){
+     for {
+     	for job := range mr.ReduceWorkQueue {
+
+	    worker_index := 1
+	    total_workers := len(mr.Workers)
+	
+            for _, w := range mr.Workers {	
+	      	       fmt.Printf("Submitting Reduce job: %d to worker:%s \n", job, w)	
+	      	       go mr.RunReducer(job, w)
+		       if(worker_index < total_workers){
+		       		       job = <- mr.ReduceWorkQueue	
+				       worker_index += 1
+		       }
+		}
+	 }
+    }
+}
+
 
 func (mr *MapReduce) RunMaster() *list.List {
 	fmt.Printf("Starting Master with Maps:%i Reducers:%i \n", mr.nMap, mr.nReduce)
 
+	//go mr.WorkerCoordinator()
 	<- mr.registerChannel
 	<- mr.registerChannel
+
+	go mr.MapJobDispatcher()	
 	
 	map_count := 0
 	for map_count < mr.nMap {
-		for _, w := range mr.Workers {
-			go mr.RunMapper(map_count, w)
-			map_count += 1
-
-		}
+	    mr.MapWorkQueue <- map_count
+	    map_count += 1
 	}
 
 	map_done := 0
 	for map_done < mr.nMap {
-		<- mr.MapChannel
-
+		fmt.Printf("Map Job Completed for %d\n", <- mr.MapChannel)
+		fmt.Printf("MAP COMPLETE ========================================> %d / %d\n", map_done+1, nMap)
 		map_done += 1
 	}
 
+	close(mr.MapWorkQueue)
+
+	fmt.Printf("Submitted Map jobs:%d, completed jobs:%d\n", nMap, map_done)
+
+	go mr.ReduceJobDispatcher()	
+
 	reduce_count := 0
 	for reduce_count < nReduce {
-		for _, w := range mr.Workers {
-			go mr.RunReducer(reduce_count, w)
-			reduce_count += 1
-		}
+	    mr.ReduceWorkQueue <- reduce_count
+	    reduce_count += 1
 	}
 
 	reduce_done := 0
 	for reduce_done < mr.nReduce {
-		<- mr.ReduceChannel
-
+		fmt.Printf("Reduce Job Completed for %d\n", <- mr.ReduceChannel)
 		reduce_done += 1
+		fmt.Printf("Reduce COMPLETE ========================================> %d\n", (reduce_done / mr.nReduce) * 100)
 	}
+
+	close(mr.ReduceWorkQueue)
+
+	fmt.Printf("Submitted Reduce jobs:%d, completed jobs:%d\n", nReduce, reduce_done)
 
 	return mr.KillWorkers()
 }

@@ -64,8 +64,11 @@ type MapReduce struct {
 	Workers map[string]*WorkerInfo
 
 	// add any additional state here
-	MapChannel chan bool
-	ReduceChannel chan bool
+	MapChannel chan int
+	ReduceChannel chan int
+	
+	MapWorkQueue chan int
+	ReduceWorkQueue chan int
 }
 
 func InitMapReduce(nmap int, nreduce int,
@@ -80,8 +83,10 @@ func InitMapReduce(nmap int, nreduce int,
 	mr.DoneChannel = make(chan bool)
 	mr.Workers = make(map[string]*WorkerInfo)
 
-	mr.MapChannel = make(chan bool, nmap)
-	mr.ReduceChannel = make(chan bool, nreduce)
+	mr.MapChannel = make(chan int, nmap)
+	mr.ReduceChannel = make(chan int, nreduce)
+	mr.MapWorkQueue = make(chan int, 1)
+	mr.ReduceWorkQueue = make(chan int, 1)
 	// initialize any additional state here
 	return mr
 }
@@ -98,6 +103,7 @@ func (mr *MapReduce) Register(args *RegisterArgs, res *RegisterReply) error {
 	DPrintf("Register: worker %s\n", args.Worker)
 	mr.registerChannel <- args.Worker
 	mr.Workers[args.Worker] = &WorkerInfo{args.Worker}
+	fmt.Printf("ADDED new worker: %s\n", args.Worker)
 	res.OK = true
 	return nil
 }
