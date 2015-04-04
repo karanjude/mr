@@ -91,54 +91,12 @@ func (mr *MapReduce) WorkerCoordinator(){
     }
 }
 
-func (mr *MapReduce) MapJobDispatcher(){
-     for {
-     	for job := range mr.MapWorkQueue {
-
-	    worker_index := 1
-	    total_workers := len(mr.Workers)
-	
-            for _, w := range mr.Workers {	
-	      	       fmt.Printf("Submitting Map job: %d to worker:%s \n", job, w)	
-	      	       go mr.RunMapper(job, w)
-		       if(worker_index < total_workers){
-		       		       job = <- mr.MapWorkQueue	
-				       worker_index += 1
-		       }
-		}
-	 }
-    }
-}
-
-func (mr *MapReduce) ReduceJobDispatcher(){
-     for {
-     	for job := range mr.ReduceWorkQueue {
-
-	    worker_index := 1
-	    total_workers := len(mr.Workers)
-	
-            for _, w := range mr.Workers {	
-	      	       fmt.Printf("Submitting Reduce job: %d to worker:%s \n", job, w)	
-	      	       go mr.RunReducer(job, w)
-		       if(worker_index < total_workers){
-		       		       job = <- mr.ReduceWorkQueue	
-				       worker_index += 1
-		       }
-		}
-	 }
-    }
-}
-
 
 func (mr *MapReduce) RunMaster() *list.List {
 	fmt.Printf("Starting Master with Maps:%i Reducers:%i \n", mr.nMap, mr.nReduce)
 
-	//go mr.WorkerCoordinator()
-	<- mr.registerChannel
-	<- mr.registerChannel
+	go mr.WorkerCoordinator()
 
-	go mr.MapJobDispatcher()	
-	
 	map_count := 0
 	for map_count < mr.nMap {
 	    mr.MapWorkQueue <- map_count
@@ -155,8 +113,6 @@ func (mr *MapReduce) RunMaster() *list.List {
 	close(mr.MapWorkQueue)
 
 	fmt.Printf("Submitted Map jobs:%d, completed jobs:%d\n", nMap, map_done)
-
-	go mr.ReduceJobDispatcher()	
 
 	reduce_count := 0
 	for reduce_count < nReduce {

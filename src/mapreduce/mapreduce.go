@@ -99,11 +99,27 @@ func MakeMapReduce(nmap int, nreduce int,
 	return mr
 }
 
+func (mr *MapReduce) WorkerProxy(args *RegisterArgs, w *WorkerInfo){
+	fmt.Printf("ADDED new worker: %s\n", args.Worker)     
+	
+	for map_job := range mr.MapWorkQueue {
+	      	       fmt.Printf("Submitting Map job: %d to worker:%s \n", map_job, w)	
+	      	       go mr.RunMapper(map_job, w)
+	}
+
+	for reduce_job := range mr.ReduceWorkQueue {
+	      	       fmt.Printf("Submitting Map job: %d to worker:%s \n", reduce_job, w)	
+	      	       go mr.RunReducer(reduce_job, w)
+	}
+}
+
 func (mr *MapReduce) Register(args *RegisterArgs, res *RegisterReply) error {
 	DPrintf("Register: worker %s\n", args.Worker)
 	mr.registerChannel <- args.Worker
 	mr.Workers[args.Worker] = &WorkerInfo{args.Worker}
-	fmt.Printf("ADDED new worker: %s\n", args.Worker)
+
+	go mr.WorkerProxy(args, mr.Workers[args.Worker])
+
 	res.OK = true
 	return nil
 }
