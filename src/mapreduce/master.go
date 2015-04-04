@@ -40,17 +40,13 @@ func (mr *MapReduce) RunMapper(map_count int, w *WorkerInfo){
 			for retries < 1 {
 				ok := call(w.address, "Worker.DoJob", args, &res)
 				if ok == false{
-				      	 //fmt.Printf("Total workers: %d", len(mr.Workers))
-				      	 fmt.Printf("map job failed for %d \n", map_count)
-					//fmt.Printf("DoJob: Map Failed for worker %s %v \n", w.address)
+					fmt.Printf("DoJob: Map Failed for worker %d %v \n", map_count, w.address)
 					mr.MapWorkQueue <- map_count
 				}else{
-					//fmt.Printf("DoJob: Map Succeeded for worker %s \n", w.address)
 					mr.MapChannel <- map_count		
 					break
 				}
 				retries += 1
-				//fmt.Printf("Retryin ... %d\n", retries)
 			}
 
 }
@@ -67,17 +63,13 @@ func (mr *MapReduce) RunReducer(reduce_count int, w *WorkerInfo){
 			for retries < 1 {
 				ok := call(w.address, "Worker.DoJob", args, &res)
 				if ok == false {
-				      	 //fmt.Printf("Total workers: %d", len(mr.Workers))
-				      	 fmt.Printf("reduce job failed for %d \n", reduce_count)
-					//fmt.Printf("DoJob: Map Failed for worker %s %v \n", w.address)
+					fmt.Printf("DoJob: Map Failed for worker %s %v \n", reduce_count, w.address)
 					mr.ReduceWorkQueue <- reduce_count
 				}else{
-					//fmt.Printf("DoJob: Reduce succeeded for worker %s \n", w.address)
 					mr.ReduceChannel <- reduce_count		
 					break
 				}
 				retries += 1
-				//fmt.Printf("Retryin ... %d\n", retries)
 			}
 }
 
