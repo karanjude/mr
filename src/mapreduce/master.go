@@ -98,16 +98,16 @@ func (mr *MapReduce) RunMaster() *list.List {
 	map_done := 0
 	for map_done < mr.nMap {
 		fmt.Printf("Map Job Completed for %d\n", <- mr.MapChannel)
-		fmt.Printf("MAP COMPLETE ========================================> %d / %d\n", map_done+1, nMap)
+		fmt.Printf("MAP COMPLETE ========================================> %d / %d\n", map_done+1, mr.nMap)
 		map_done += 1
 	}
 
 	close(mr.MapWorkQueue)
 
-	fmt.Printf("Submitted Map jobs:%d, completed jobs:%d\n", nMap, map_done)
+	fmt.Printf("Submitted Map jobs:%d, completed jobs:%d\n", mr.nMap, map_done)
 
 	reduce_count := 0
-	for reduce_count < nReduce {
+	for reduce_count < mr.nReduce {
 	    mr.ReduceWorkQueue <- reduce_count
 	    reduce_count += 1
 	}
@@ -121,7 +121,7 @@ func (mr *MapReduce) RunMaster() *list.List {
 
 	close(mr.ReduceWorkQueue)
 
-	fmt.Printf("Submitted Reduce jobs:%d, completed jobs:%d\n", nReduce, reduce_done)
+	fmt.Printf("Submitted Reduce jobs:%d, completed jobs:%d\n", mr.nReduce, reduce_done)
 
 	return mr.KillWorkers()
 }
