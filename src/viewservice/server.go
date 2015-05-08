@@ -56,7 +56,7 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 	UpdateView := false
 
 	//fmt.Printf(" \n --> ViewService : %v \n", vs)
-	//fmt.Printf("\n (%v, %v, %v) (%v, %v)", vs.Viewnum, vs.Primary, vs.Backup, args.Viewnum, args.Me)
+	DPrintf("\n (%v, %v, %v) (%v, %v)", vs.Viewnum, vs.Primary, vs.Backup, args.Viewnum, args.Me)
 
 	/*
 	if nil != vs.PrevView {
@@ -205,6 +205,8 @@ func StartServer(me string) *ViewServer {
 	vs.Backup = ""
 	vs.Viewnum = 0
 
+	DPrintf("\n About to start ViewServer")
+
 	// tell net/rpc about our RPC server and handlers.
 	rpcs := rpc.NewServer()
 	rpcs.Register(vs)
@@ -217,6 +219,8 @@ func StartServer(me string) *ViewServer {
 		log.Fatal("listen error: ", e)
 	}
 	vs.l = l
+
+	DPrintf("\n ViewService Started")
 
 	// please don't change any of the following code,
 	// or do anything to subvert it.

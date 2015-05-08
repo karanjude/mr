@@ -68,7 +68,7 @@ func (ck *Clerk) Ping(viewnum uint) (View, error) {
 		return View{}, fmt.Errorf("Ping(%v) failed", viewnum)
 	}
 
-
+	DPrintf("\n CLIENT PING COMPLETED")
 
 	return reply.View, nil
 }
