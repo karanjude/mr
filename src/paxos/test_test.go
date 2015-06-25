@@ -146,6 +146,8 @@ func TestBasic(t *testing.T) {
 
 	fmt.Printf("  ... Passed\n")
 
+
+
 	fmt.Printf("Test: Many proposers, different values ...\n")
 
 	pxa[0].Start(2, 100)
@@ -154,6 +156,10 @@ func TestBasic(t *testing.T) {
 	waitn(t, pxa, 2, npaxos)
 
 	fmt.Printf("  ... Passed\n")
+
+
+}
+/*
 
 	fmt.Printf("Test: Out-of-order instances ...\n")
 
@@ -175,7 +181,10 @@ func TestBasic(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-/*
+
+
+
+
 func TestDeaf(t *testing.T) {
 	runtime.GOMAXPROCS(4)
 

@@ -30,7 +30,7 @@ import "sync"
 import "sync/atomic"
 import "fmt"
 import "math/rand"
-//import "time"
+import "time"
 
 import "container/heap"
 
@@ -267,21 +267,20 @@ func (px *Paxos) DecidedSeq(args *DecidedArgs, reply *DecidedReply) error {
 	return nil
 }
 
-func (px *Paxos) Accept(seq int, vv interface{}) {
+func (px *Paxos) Accept(N int, vv interface{}) {
 	args := &AcceptArgs{}
-	args.N = seq
+	args.N = N
 	args.VV = vv
 
-	DPrintf("\n --> (%v) send accept(%v, %v)", px.me, seq, vv)
+	DPrintf("\n --> (%v) send accept(%v, %v)", px.me, args.N, vv)
 
 	for _, peer := range px.peers {
 		var reply AcceptReply
 		
 		call(peer, "Paxos.AcceptSeq", args, &reply)
 
-		DPrintf("\n <-- (%v) Received accept(%v) reply: (%v)", px.me, args, reply)
-
 		if reply.Err == OK {
+			DPrintf("\n <-- (%v) Received accept_ok(%v) reply: (%v)", px.me, args, reply)
 			key := AcceptKey{reply.N}
 			px.acceptState[key]++
 
@@ -289,9 +288,9 @@ func (px *Paxos) Accept(seq int, vv interface{}) {
 
 			if px.acceptState[key] > (len(px.peers) / 2) {
 				
-				DPrintf("\n\n ==: (%v) GotMajorty for %v ", px.me, key)
+				DPrintf("\n\n ==: (%v) GotMajorty for %v ", px.me, args.N)
 
-				go px.Decided(seq, vv)
+				go px.Decided(args.N, vv)
 
 				break
 			}
@@ -299,12 +298,12 @@ func (px *Paxos) Accept(seq int, vv interface{}) {
 	}
 }
 
-func (px *Paxos) Decided(seq int, vv interface{}) {
+func (px *Paxos) Decided(N int, vv interface{}) {
 	args := &DecidedArgs{}
-	args.N = seq
+	args.N = N
 	args.VV = vv
 
-	DPrintf("\n --> (%v) send decided(%v, %v)", px.me, seq, vv)
+	DPrintf("\n --> (%v) send decided(%v, %v)", px.me, args.N, vv)
 
 	for _, peer := range px.peers {
 
@@ -319,21 +318,20 @@ func (px *Paxos) Decided(seq int, vv interface{}) {
 
 func (px *Paxos) Prepare(seq int, v interface{}) {
 	args := &PrepareArgs{}
-	args.N = seq
+	args.N = seq * 13 + int(time.Now().Unix()) + px.me * 13
 
-	NaMax := seq
+	NaMax := args.N
 	VaMax := v
 
-	DPrintf("\n --> (%v) send prepare(%v)",px.me,  seq)
+	DPrintf("\n --> (%v) send prepare(%v)",px.me,  args.N)
 
 	for _, peer := range px.peers {
 		var reply PrepareReply
 		
 		call(peer, "Paxos.PrepareSeq", args, &reply)
 
-		DPrintf("\n <-- (%v) Received prepare(%v) reply: (%v)", px.me, seq, reply)
-
 		if reply.Err == OK {
+			DPrintf("\n <-- (%v) Received prepare_ok reply: (%v)", px.me, reply)	
 			key := PrepareKey{reply.N, reply.Na, reply.Va}
 			px.prepareState[key]++
 
@@ -349,13 +347,50 @@ func (px *Paxos) Prepare(seq int, v interface{}) {
 					VaMax = v
 				}
 				
-				go px.Accept(key.N, VaMax)
+				go px.Accept(args.N, VaMax)
 
 				break
 			}
 		}
 	}
 }
+
+/*** PAXOS ALGORITHM for single instance 
+
+
+
+proposer(v):
+  while not decided:
+    choose n, unique and higher than any n seen so far
+    send prepare(n) to all servers including self
+    if prepare_ok(n_a, v_a) from majority:
+      v' = v_a with highest n_a; choose own v otherwise
+      send accept(n, v') to all
+      if accept_ok(n) from majority:
+        send decided(v') to all
+
+acceptor's state:
+  n_p (highest prepare seen)
+  n_a, v_a (highest accept seen)
+
+acceptor's prepare(n) handler:
+  if n > n_p
+    n_p = n
+    reply prepare_ok(n_a, v_a)
+  else
+    reply prepare_reject
+
+acceptor's accept(n, v) handler:
+  if n >= n_p
+    n_p = n
+    n_a = n
+    v_a = v
+    reply accept_ok(n)
+  else
+    reply accept_reject
+
+***/
+
 
 //
 // the application wants paxos to start agreement on
