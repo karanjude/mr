@@ -293,7 +293,6 @@ func (px *Paxos) Accept(n int, vv interface{}, seq int) {
 	args.N = n
 	args.VV = vv
 
-
 	for id, peer := range px.peers {
 		var reply AcceptReply
 
@@ -308,8 +307,6 @@ func (px *Paxos) Accept(n int, vv interface{}, seq int) {
 
 //			DPrintf("\n ==: (%v) acceptState: (%v)", px.me, px.acceptState)
 
-
-
 			if px.acceptState[key] >= ((len(px.peers)/2)+1) {
 				DPrintf("\n\n ==: (%v) GotMajorty for %v ", px.me, args.N)
 				go px.Decided(args.N, vv, seq)
@@ -320,10 +317,12 @@ func (px *Paxos) Accept(n int, vv interface{}, seq int) {
 	}
 }
 
+
 func (px *Paxos) Decided(n int, vv interface{}, seq int) {
 	args := &DecidedArgs{}
 	args.N = seq
 	args.VV = vv
+
 
 	for id, peer := range px.peers {
 
@@ -367,6 +366,7 @@ func (px *Paxos) Prepare(seq int, v interface{}) {
 			px.prepareState[key]++
 			DPrintf("\n ==: (%v) PrepareMajorityState: (%v) :== \n ", px.me, px.prepareState)
 
+
 			px.DoneFromPeer(id, reply.DoneNumber)
 
 			if px.prepareState[key] >= ((len(px.peers)/2)+1) {
@@ -381,6 +381,43 @@ func (px *Paxos) Prepare(seq int, v interface{}) {
 		}
 	}
 }
+
+/*** PAXOS ALGORITHM for single instance 
+
+
+
+proposer(v):
+  while not decided:
+    choose n, unique and higher than any n seen so far
+    send prepare(n) to all servers including self
+    if prepare_ok(n_a, v_a) from majority:
+      v' = v_a with highest n_a; choose own v otherwise
+      send accept(n, v') to all
+      if accept_ok(n) from majority:
+        send decided(v') to all
+
+acceptor's state:
+  n_p (highest prepare seen)
+  n_a, v_a (highest accept seen)
+
+acceptor's prepare(n) handler:
+  if n > n_p
+    n_p = n
+    reply prepare_ok(n_a, v_a)
+  else
+    reply prepare_reject
+
+acceptor's accept(n, v) handler:
+  if n >= n_p
+    n_p = n
+    n_a = n
+    v_a = v
+    reply accept_ok(n)
+  else
+    reply accept_reject
+
+***/
+
 
 //
 // the application wants paxos to start agreement on
