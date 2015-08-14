@@ -6,10 +6,10 @@ import "strconv"
 import "os"
 import "time"
 import "fmt"
-//import "math/rand"
+import "math/rand"
 import crand "crypto/rand"
 import "encoding/base64"
-//import "sync/atomic"
+import "sync/atomic"
 
 func randstring(n int) string {
 	b := make([]byte, 2*n)
@@ -35,9 +35,6 @@ func ndecided(t *testing.T, pxa []*Paxos, seq int) int {
 	for i := 0; i < len(pxa); i++ {
 		if pxa[i] != nil {
 			decided, v1 := pxa[i].Status(seq)
-
-			fmt.Printf("== Peer(%v) DecidedStatus(%v) for Seq(%v) == \n", i, decided == Decided, seq)
-
 			if decided == Decided {
 				if count > 0 && v != v1 {
 					t.Fatalf("decided values do not match; seq=%v i=%v v=%v v1=%v",
@@ -136,7 +133,6 @@ func TestBasic(t *testing.T) {
 
 	fmt.Printf("  ... Passed\n")
 
-
 	fmt.Printf("Test: Many proposers, same value ...\n")
 
 	for i := 0; i < npaxos; i++ {
@@ -175,7 +171,6 @@ func TestBasic(t *testing.T) {
 	fmt.Printf("  ... Passed\n")
 }
 
-/*
 func TestDeaf(t *testing.T) {
 	runtime.GOMAXPROCS(4)
 
@@ -960,4 +955,3 @@ func TestLots(t *testing.T) {
 
 	fmt.Printf("  ... Passed\n")
 }
-*/

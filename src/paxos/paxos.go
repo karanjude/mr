@@ -30,8 +30,9 @@ import "sync"
 import "sync/atomic"
 import "fmt"
 import "math/rand"
-//import "time"
+import "time"
 
+//import "strconv"
 import "container/heap"
 
 // px.Status() return values, indicating
@@ -51,7 +52,7 @@ type ValueState struct {
 	value interface{}
 }
 
-const Debug = 1
+const Debug = 0
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
         if Debug > 0 {
@@ -129,11 +130,20 @@ type Paxos struct {
 
 	prepareState map[PrepareKey]int
 	acceptState map[AcceptKey]int
+	decidedState map[int]Item
+	doneMap map[int]int
+
+
+	max_seq int
+	DoneSeen bool
+
 	state *PriorityQueue
 }
 
 type PrepareArgs struct{
 	N int
+	DoneNumber int
+	Id int
 }
 
 type AcceptArgs struct{
@@ -157,6 +167,7 @@ type PrepareReply struct {
 	Va interface{}
 
 	Err string
+	DoneNumber int
 }
 
 type PrepareKey struct {
@@ -167,6 +178,7 @@ type PrepareKey struct {
 
 type AcceptReply struct {
 	N int
+
 
 	Err string
 }
@@ -217,7 +229,9 @@ func call(srv string, name string, args interface{}, reply interface{}) bool {
 }
 
 func (px *Paxos) PrepareSeq(args *PrepareArgs, reply *PrepareReply) error {
-	DPrintf("\n === (%v) Received prepare(%v)", px.me, args.N)
+	DPrintf("\n === (%v) Received prepare(%v)", px.me, args)
+
+	px.DoneFromPeer(args.Id, args.DoneNumber)
 
 	if args.N >= px.n_p {
 		px.n_p = args.N
@@ -227,8 +241,10 @@ func (px *Paxos) PrepareSeq(args *PrepareArgs, reply *PrepareReply) error {
 		reply.Va = px.v_a
 
 		reply.Err = OK
+		reply.DoneNumber = px.doneMap[px.me]
 	}else{
 		reply.Err = REJECT
+		reply.DoneNumber = px.doneMap[px.me]
 	}
 
 	return nil
@@ -244,6 +260,7 @@ func (px *Paxos) AcceptSeq(args *AcceptArgs, reply *AcceptReply) error {
 		
 		reply.N = px.n_a
 		reply.Err = OK
+
 	}else {
 		reply.Err = REJECT
 	}
@@ -254,44 +271,48 @@ func (px *Paxos) AcceptSeq(args *AcceptArgs, reply *AcceptReply) error {
 func (px *Paxos) DecidedSeq(args *DecidedArgs, reply *DecidedReply) error {
 	DPrintf("\n --> (%v) Received decided(%v)", px.me, args)
 
-	decidedValueState := &Item{}
+	decidedValueState := Item{}
 	decidedValueState.value = ValueState{Decided, args.VV}
 	decidedValueState.N = args.N
 
-	heap.Push(px.state, decidedValueState)
+	px.decidedState[args.N] = decidedValueState
 
 	reply.Err = OK
 
-	DPrintf("\n ==: (%v) state: (%v)", px.me, px.state)
+	DPrintf("\n ==: (%v) state: (%v)", px.me, px.decidedState)
+
+	if args.N > px.max_seq {
+		px.max_seq = args.N
+	}
 
 	return nil
 }
 
-func (px *Paxos) Accept(seq int, vv interface{}) {
+func (px *Paxos) Accept(n int, vv interface{}, seq int) {
 	args := &AcceptArgs{}
-	args.N = seq
+	args.N = n
 	args.VV = vv
 
-	DPrintf("\n --> (%v) send accept(%v, %v)", px.me, seq, vv)
 
-	for _, peer := range px.peers {
+	for id, peer := range px.peers {
 		var reply AcceptReply
-		
+
+		DPrintf("\n (%v) --> (%v) accept(%v, %v)", px.me, id, args.N, vv)		
 		call(peer, "Paxos.AcceptSeq", args, &reply)
 
-		DPrintf("\n <-- (%v) Received accept(%v) reply: (%v)", px.me, args, reply)
-
 		if reply.Err == OK {
+			DPrintf("\n (%v) <-- (%v) accept_ok(%v) reply: (%v)", px.me, id, args.N, reply)
+
 			key := AcceptKey{reply.N}
 			px.acceptState[key]++
 
-			DPrintf("\n ==: (%v) acceptState: (%v)", px.me, px.acceptState)
+//			DPrintf("\n ==: (%v) acceptState: (%v)", px.me, px.acceptState)
 
-			if px.acceptState[key] > (len(px.peers) / 2) {
-				
-				DPrintf("\n\n ==: (%v) GotMajorty for %v ", px.me, key)
 
-				go px.Decided(seq, vv)
+
+			if px.acceptState[key] >= ((len(px.peers)/2)+1) {
+				DPrintf("\n\n ==: (%v) GotMajorty for %v ", px.me, args.N)
+				go px.Decided(args.N, vv, seq)
 
 				break
 			}
@@ -299,67 +320,71 @@ func (px *Paxos) Accept(seq int, vv interface{}) {
 	}
 }
 
-func (px *Paxos) Decided(seq int, vv interface{}) {
+func (px *Paxos) Decided(n int, vv interface{}, seq int) {
 	args := &DecidedArgs{}
 	args.N = seq
 	args.VV = vv
 
-	DPrintf("\n --> (%v) send decided(%v, %v)", px.me, seq, vv)
-
-	for _, peer := range px.peers {
+	for id, peer := range px.peers {
 
 		var reply DecidedReply
 		
+		DPrintf("\n (%v) --> (%v) decided(%v, %v)", px.me, id, n, vv)
 		call(peer, "Paxos.DecidedSeq", args, &reply)
 
 		if reply.Err == OK {
+		}else{
+			DPrintf("\n call to Decided %v failed ", id)
 		}
 	}
 }
 
 func (px *Paxos) Prepare(seq int, v interface{}) {
 	args := &PrepareArgs{}
-	args.N = seq
+	args.N = (seq << 3) + int(time.Now().Unix()) + px.me
+	args.DoneNumber = px.doneMap[px.me]
+	args.Id = px.me
 
-	NaMax := seq
+	NaMax := args.N
 	VaMax := v
 
-	DPrintf("\n --> (%v) send prepare(%v)",px.me,  seq)
-
-	for _, peer := range px.peers {
+	for id, peer := range px.peers {
 		var reply PrepareReply
 		
+		DPrintf("\n (%v) --> (%v) prepare(%v) for %v", px.me, id, args.N, v)
 		call(peer, "Paxos.PrepareSeq", args, &reply)
 
-		DPrintf("\n <-- (%v) Received prepare(%v) reply: (%v)", px.me, seq, reply)
-
 		if reply.Err == OK {
-			key := PrepareKey{reply.N, reply.Na, reply.Va}
+			DPrintf("\n(%v) <-- (%v) prepare_ok(%v) reply: (%v)", px.me, id, args.N, reply)
+
+			if reply.Na > NaMax {
+				VaMax = reply.Va
+			}else{
+				VaMax = v
+			}
+
+			key := PrepareKey{reply.N, NaMax, VaMax}
 			px.prepareState[key]++
+			DPrintf("\n ==: (%v) PrepareMajorityState: (%v) :== \n ", px.me, px.prepareState)
 
-			DPrintf("\n ==: (%v) PrepareState: (%v) :== \n ", px.me, px.prepareState)
+			px.DoneFromPeer(id, reply.DoneNumber)
 
-			if px.prepareState[key] > (len(px.peers) / 2) {
-
-				DPrintf("\n\n ==: (%v) GotMajorty for %v ", px.me, key)
+			if px.prepareState[key] >= ((len(px.peers)/2)+1) {
+				DPrintf("\n\n ==: (%v) GotMajorty for %v ", px.me, VaMax)
+				go px.Accept(args.N, VaMax, seq)
 				
-				if key.Na > NaMax {
-					VaMax = key.Va
-				}else{
-					VaMax = v
-				}
-				
-				go px.Accept(key.N, VaMax)
-
 				break
 			}
+				
+		}else{
+			px.DoneFromPeer(id, reply.DoneNumber)
 		}
 	}
 }
 
 //
 // the application wants paxos to start agreement on
-// instance seq, with proposed value v.
+// instance seq, withproposed value v.
 // Start() returns right away; the application will
 // call Status() to find out if/when agreement
 // is reached.
@@ -370,6 +395,19 @@ func (px *Paxos) Start(seq int, v interface{}) {
 
 }
 
+func (px *Paxos) DoneFromPeer(peer int,seq int){
+	val, ok := px.doneMap[peer]
+	if ok {
+		if seq < val || val == -1 {
+			px.doneMap[peer] = seq
+		}
+	}else{
+		px.doneMap[peer] = seq
+	}
+
+	DPrintf("{%v} DoneMap:%v", px.me, px.doneMap)
+}
+
 //
 // the application on this machine is done with
 // all instances <= seq.
@@ -377,7 +415,23 @@ func (px *Paxos) Start(seq int, v interface{}) {
 // see the comments for Min() for more explanation.
 //
 func (px *Paxos) Done(seq int) {
-	// Your code here.
+	px.doneMap[px.me] = seq
+	DPrintf("\n {%v} setting min:%v %v", px.me, px.doneMap[px.me], px.doneMap)
+/*
+	if(px.min_seq == -1){
+		if(px.DoneSeen == false){
+			DPrintf("\n {%v} setting min_seq:%v to seq:%v", px.me, px.min_seq, seq)
+			px.min_seq = seq;
+		}
+	}else{
+		if(seq < px.min_seq){
+			px.min_seq = seq
+		}
+	}
+
+	px.DoneSeen = true
+	DPrintf("\n {%v} Done(%v) min:%v max:%v DoneSeen:%v", px.me, seq, px.min_seq, px.max_seq, px.DoneSeen)
+*/
 }
 
 //
@@ -386,8 +440,7 @@ func (px *Paxos) Done(seq int) {
 // this peer.
 //
 func (px *Paxos) Max() int {
-	// Your code here.
-	return px.n_a
+	return px.max_seq
 }
 
 //
@@ -419,8 +472,19 @@ func (px *Paxos) Max() int {
 // instances.
 //
 func (px *Paxos) Min() int {
-	// You code here.
-	return 0
+	min_val := px.doneMap[px.me]
+
+
+	for id,v := range px.doneMap {
+		//DPrintf("\n [%v][%v] = %v", px.me, k, v)
+		if id != px.me && v < min_val {
+			min_val = v
+		}
+	}
+
+	DPrintf("\n {%v} Min() min:%v max:%v %v", px.me, min_val+1, px.max_seq, px.doneMap)
+
+	return min_val + 1
 }
 
 //
@@ -432,25 +496,15 @@ func (px *Paxos) Min() int {
 //
 func (px *Paxos) Status(seq int) (Fate, interface{}) {
 
-	if px.state.Len() > 0 {
-		v := heap.Pop(px.state).(*Item)
-		
-		heap.Push(px.state, v)
-		
-		if seq <= v.N {
-			val := v.value
-
-			if(val.status == Decided){
-				return val.status, val.value
-			}
-
-			return val.status, nil
-		}
+	if seq <= px.max_seq {
+		val := px.decidedState[px.max_seq]
+		return val.value.status, val.value.value
 	}
 
+	if val, ok := px.decidedState[seq]; ok {
+		return val.value.status, val.value.value
+	}
 
-
-	// Your code here.
 	return Pending, nil
 }
 
@@ -502,7 +556,13 @@ func Make(peers []string, me int, rpcs *rpc.Server) *Paxos {
 	px.n_p = -1
 	px.prepareState = make(map[PrepareKey]int)
 	px.acceptState = make(map[AcceptKey]int)
+	px.decidedState = make(map[int]Item)
+	px.doneMap = make(map[int]int)
 	px.state = &PriorityQueue{}
+
+
+	px.doneMap[px.me] = -1
+	px.DoneSeen = false 
 
 	heap.Init(px.state)
 
